@@ -1,11 +1,13 @@
 package it.cnr.isti.pad.mb;
 
 import java.io.IOException;
+import java.text.DecimalFormat;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.StringTokenizer;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.FloatWritable;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
@@ -19,8 +21,10 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 public class Main {
 
     private final static String separator = "@";
+    private static final DecimalFormat DF = new DecimalFormat("###.########");
+    private static final int numberOfDocumentsInCorpus = 782;
 
-    public static class WordFrequencyMapper extends Mapper<Object, Text, Text, IntWritable> {
+    public static class WordFrequencyMapper extends Mapper<Object, Text, Text, FloatWritable> {
         private final Text word = new Text();
         private int length = 0;
         private Map<String,Integer> words  = new HashMap<String, Integer>();
@@ -39,10 +43,10 @@ public class Main {
         @Override
         protected void cleanup(Context context) throws IOException, InterruptedException {
             String fileName = ((FileSplit)context.getInputSplit()).getPath().getName();
-            IntWritable count = new IntWritable(0);
+            FloatWritable count = new FloatWritable(0.f);
             Text keyOut = new Text();
             for (String word : words.keySet()) {
-                count.set(words.get(word)/length);
+                count.set((float)words.get(word)/(float)length);
                 keyOut.set(fileName + separator + word);
                 context.write(keyOut, count);
             }
@@ -50,28 +54,28 @@ public class Main {
         }
     }
 
-    public static class IdfMapper extends Mapper<Object,Text,Text,IntWritable>{
+    public static class IdfMapper extends Mapper<Object,Text,Text,Text>{
+        private Text word = new Text();
+        private Text docFreq = new Text();
+
         @Override
         protected void map(Object key, Text value, Context context) throws IOException, InterruptedException {
             String[] fileWordFrequency = value.toString().split("\t");
             String[] fileWord = fileWordFrequency[0].split(separator);
-
+            word.set(fileWord[1]);
+            docFreq.set(fileWord[0] + separator + fileWordFrequency[2]);
+            context.write(word,docFreq);
         }
     }
 
 
-    public static class WordCountReducer extends Reducer<Text, IntWritable, Text, IntWritable> {
+    public static class IdfMapperReducer  extends Reducer<Text, Text, Text, FloatWritable> {
 
         private IntWritable result = new IntWritable();
-        public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException,
+        public void reduce(Text key, Iterable<Text> values, Context context) throws IOException,
                 InterruptedException {
-
-            int sum = 0;
-            for (IntWritable val : values) {
-                sum += val.get();
-            }
-            result.set(sum);
-            context.write(key, result);
+//            result.set();
+//            context.write(key);
         }
     }
 

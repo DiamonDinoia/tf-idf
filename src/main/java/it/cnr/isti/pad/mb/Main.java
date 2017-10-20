@@ -73,13 +73,17 @@ public class Main {
 
         private FloatWritable result = new FloatWritable();
         private Map<String,FloatWritable> frequencies = new HashMap<String, FloatWritable>();
+        float frequency;
         public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
             for (Text docFreq : values) {
                 //tmp[0] file tmp[1] frequency
                 String[] tmp = docFreq.toString().split(separator);
                 frequencies.put(tmp[0],new FloatWritable(Float.parseFloat(tmp[1])));
             }
-
+            frequency = (float) numberOfDocumentsInCorpus/ (float) frequencies.size();
+            for (String documents : frequencies.keySet()) {
+                
+            }
         }
     }
 

@@ -21,7 +21,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 
-public class Main {
+public class RankTFIDF {
 
     private final static String separator = "@";
     private static final DecimalFormat DF = new DecimalFormat("###.########");
@@ -34,7 +34,7 @@ public class Main {
 
         Configuration conf = new Configuration();
         Job job = new Job(conf, "tf-idf");
-        job.setJarByClass(Main.class);
+        job.setJarByClass(RankTFIDF.class);
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(DoubleWritable.class);
         job.setMapperClass(WordFrequencyMapper.class);
@@ -44,7 +44,7 @@ public class Main {
         job.waitForCompletion(true);
         job = new Job(conf, "final");
         conf.clear();
-        job.setJarByClass(Main.class);
+        job.setJarByClass(RankTFIDF.class);
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
         job.setMapperClass(IdfMapper.class);

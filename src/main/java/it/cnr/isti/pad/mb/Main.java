@@ -1,6 +1,5 @@
 package it.cnr.isti.pad.mb;
 
-
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -18,8 +17,6 @@ import java.io.IOException;
 import java.text.DecimalFormat;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -31,6 +28,7 @@ public class Main {
     private static final int numberOfDocumentsInCorpus = 782;
 
     private static final String tmpDir = "./tmp";
+
 
     public static void main(String[] args) throws Exception {
 
@@ -61,59 +59,60 @@ public class Main {
     public static class IdfMapper extends Mapper<Object, Text, Text, Text> {
         private Text word = new Text();
         private Text docFreq = new Text();
+        StringBuilder valueBuilder = new StringBuilder();
 
         @Override
         protected void map(Object key, Text value, Context context) throws IOException, InterruptedException {
             String[] wordFileFrequency = value.toString().split("\t");
             String[] wordFile = wordFileFrequency[0].split(separator);
-//            System.out.println(wordFile[0] + " " + wordFile[1] + " " + wordFileFrequency[1]);
             word.set(wordFile[0]);
-            docFreq.set(wordFile[1] + separator + wordFileFrequency[1]);
+            docFreq.set(
+                    valueBuilder.append(wordFile[1])
+                            .append(separator)
+                            .append(wordFileFrequency[1])
+                            .toString()
+            );
             context.write(word, docFreq);
+            valueBuilder.setLength(0);
         }
     }
 
     public static class IdfReducer extends Reducer<Text, Text, Text, Text> {
 
         double frequency;
+        private Text wordDocument = new Text();
+        private Text TF = new Text();
         private Map<String, Double> frequencies = new HashMap<String, Double>();
 
         public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
-            String[] tmp = null;
             for (Text docFreq : values) {
-                //tmp[1] file tmp[0] frequency
-                tmp = docFreq.toString().split(separator);
+                String[] tmp = docFreq.toString().split(separator);
                 frequencies.put(tmp[0], Double.parseDouble(tmp[1]));
             }
             frequency = Math.log10((double) numberOfDocumentsInCorpus / frequencies.size());
-            Text wordDocument = new Text();
-            Text TF = new Text();
-            Set<String> keys = new TreeSet<String>(frequencies.keySet());
-            for (String filename : keys) {
+            for (String filename : frequencies.keySet()) {
                 TF.set(DF.format(frequencies.get(filename) * frequency));
                 wordDocument.set(key.toString() + separator + filename);
                 context.write(wordDocument, TF);
-                frequencies.remove(filename);
             }
-
+            frequencies.clear();
         }
     }
 
     public static class WordFrequencyMapper extends Mapper<Object, Text, Text, DoubleWritable> {
-        private int length = 0;
-        private Map<String, Integer> words = new HashMap<String, Integer>();
+        private final Map<String, Integer> words = new HashMap<String, Integer>();
+        private final DoubleWritable count = new DoubleWritable();
         private static final Pattern p = Pattern.compile("\\w+");
-        DoubleWritable count = new DoubleWritable();
-        Text keyOut = new Text();
+        private final Text outKey = new Text();
+        private final StringBuilder keyBuilder = new StringBuilder();
+        private int length = 0;
 
         @Override
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
             Matcher m = p.matcher(value.toString());
             while (m.find()) {
                 String word = m.group().toLowerCase();
-                if (!Character.isLetter(word.charAt(0)) ||
-                        Character.isDigit(word.charAt(0)) ||
-                        word.contains("_"))
+                if (!Character.isLetter(word.charAt(0)) || Character.isDigit(word.charAt(0)) || word.contains("_"))
                     continue;
                 if (words.containsKey(word)) words.put(word, words.get(word) + 1);
                 else words.put(word, 1);
@@ -126,12 +125,17 @@ public class Main {
             String fileName = ((FileSplit) context.getInputSplit()).getPath().getName();
             for (String word : words.keySet()) {
                 count.set((double) words.get(word) / length);
-                keyOut.set(word + separator + fileName);
-                context.write(keyOut, count);
+                outKey.set(
+                        keyBuilder.append(word)
+                                .append(separator)
+                                .append(fileName)
+                                .toString()
+                );
+                context.write(outKey, count);
+                keyBuilder.setLength(0);
             }
-            super.cleanup(context);
         }
-    }
 
+    }
 
 }

@@ -26,35 +26,7 @@ public class RankTFIDF {
     private final static String separator = "@";
     private static final DecimalFormat DF = new DecimalFormat("###.########");
     private static final int numberOfDocumentsInCorpus = 782;
-
     private static final String tmpDir = "./tmp";
-
-
-    public static void main(String[] args) throws Exception {
-
-        Configuration conf = new Configuration();
-        Job job = new Job(conf, "tf-idf");
-        job.setJarByClass(RankTFIDF.class);
-        job.setOutputKeyClass(Text.class);
-        job.setOutputValueClass(DoubleWritable.class);
-        job.setMapperClass(WordFrequencyMapper.class);
-        job.setNumReduceTasks(0);
-        FileInputFormat.addInputPath(job, new Path(args[0]));
-        FileOutputFormat.setOutputPath(job, new Path(tmpDir));
-        job.waitForCompletion(true);
-        job = new Job(conf, "final");
-        conf.clear();
-        job.setJarByClass(RankTFIDF.class);
-        job.setOutputKeyClass(Text.class);
-        job.setOutputValueClass(Text.class);
-        job.setMapperClass(IdfMapper.class);
-        job.setReducerClass(IdfReducer.class);
-        FileInputFormat.addInputPath(job, new Path(tmpDir));
-        FileOutputFormat.setOutputPath(job, new Path(args[1]));
-        job.waitForCompletion(true);
-        FileUtils.deleteDirectory(new File(tmpDir));
-
-    }
 
     public static class IdfMapper extends Mapper<Object, Text, Text, Text> {
         private Text word = new Text();
@@ -83,6 +55,7 @@ public class RankTFIDF {
         private Text wordDocument = new Text();
         private Text TF = new Text();
         private Map<String, Double> frequencies = new HashMap<String, Double>();
+        private final StringBuilder keyBuilder = new StringBuilder();
 
         public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
             for (Text docFreq : values) {
@@ -92,8 +65,14 @@ public class RankTFIDF {
             frequency = Math.log10((double) numberOfDocumentsInCorpus / frequencies.size());
             for (String filename : frequencies.keySet()) {
                 TF.set(DF.format(frequencies.get(filename) * frequency));
-                wordDocument.set(key.toString() + separator + filename);
+                wordDocument.set(
+                        keyBuilder.append(key.toString())
+                                .append(separator)
+                                .append(filename)
+                                .toString()
+                );
                 context.write(wordDocument, TF);
+                keyBuilder.setLength(0);
             }
             frequencies.clear();
         }
@@ -135,7 +114,30 @@ public class RankTFIDF {
                 keyBuilder.setLength(0);
             }
         }
-
     }
 
+    public static void main(String[] args) throws Exception {
+
+        Configuration conf = new Configuration();
+        Job job = new Job(conf, "tf-idf");
+        job.setJarByClass(RankTFIDF.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(DoubleWritable.class);
+        job.setMapperClass(WordFrequencyMapper.class);
+        job.setNumReduceTasks(0);
+        FileInputFormat.addInputPath(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(tmpDir));
+        job.waitForCompletion(true);
+        job = new Job(conf, "final");
+        conf.clear();
+        job.setJarByClass(RankTFIDF.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(Text.class);
+        job.setMapperClass(IdfMapper.class);
+        job.setReducerClass(IdfReducer.class);
+        FileInputFormat.addInputPath(job, new Path(tmpDir));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+        job.waitForCompletion(true);
+        FileUtils.deleteDirectory(new File(tmpDir));
+    }
 }

@@ -1,5 +1,7 @@
-package it.cnr.isti.pad.mb;
+package it.isti.cnr.pad.tonellotto;
 
+
+import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.DoubleWritable;
@@ -11,10 +13,13 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
+import java.io.File;
 import java.io.IOException;
 import java.text.DecimalFormat;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,21 +30,7 @@ public class Main {
     private static final DecimalFormat DF = new DecimalFormat("###.########");
     private static final int numberOfDocumentsInCorpus = 782;
 
-    private static final String tmpDir = "/tmp";
-
-    public static class IdfMapper extends Mapper<Object,Text,Text,Text>{
-        private Text word = new Text();
-        private Text docFreq = new Text();
-
-        @Override
-        protected void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-            String[] fileWordFrequency = value.toString().split("\t");
-            String[] fileWord = fileWordFrequency[0].split(separator);
-            word.set(fileWord[1]);
-            docFreq.set(fileWord[0] + separator + fileWordFrequency[2]);
-            context.write(word,docFreq);
-        }
-    }
+    private static final String tmpDir = "./tmp";
 
     public static void main(String[] args) throws Exception {
 
@@ -53,6 +44,7 @@ public class Main {
         FileInputFormat.addInputPath(job, new Path(args[0]));
         FileOutputFormat.setOutputPath(job, new Path(tmpDir));
         job.waitForCompletion(true);
+        job = new Job(conf, "final");
         conf.clear();
         job.setJarByClass(Main.class);
         job.setOutputKeyClass(Text.class);
@@ -62,8 +54,49 @@ public class Main {
         FileInputFormat.addInputPath(job, new Path(tmpDir));
         FileOutputFormat.setOutputPath(job, new Path(args[1]));
         job.waitForCompletion(true);
-//        FileUtils.deleteDirectory(new File(tmpDir));
-//        System.exit(job.waitForCompletion(true) ? 0 : 1);
+        FileUtils.deleteDirectory(new File(tmpDir));
+
+    }
+
+    public static class IdfMapper extends Mapper<Object, Text, Text, Text> {
+        private Text word = new Text();
+        private Text docFreq = new Text();
+
+        @Override
+        protected void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            String[] wordFileFrequency = value.toString().split("\t");
+            String[] wordFile = wordFileFrequency[0].split(separator);
+//            System.out.println(wordFile[0] + " " + wordFile[1] + " " + wordFileFrequency[1]);
+            word.set(wordFile[0]);
+            docFreq.set(wordFile[1] + separator + wordFileFrequency[1]);
+            context.write(word, docFreq);
+        }
+    }
+
+    public static class IdfReducer extends Reducer<Text, Text, Text, Text> {
+
+        double frequency;
+        private Map<String, Double> frequencies = new HashMap<String, Double>();
+
+        public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+            String[] tmp = null;
+            for (Text docFreq : values) {
+                //tmp[1] file tmp[0] frequency
+                tmp = docFreq.toString().split(separator);
+                frequencies.put(tmp[0], Double.parseDouble(tmp[1]));
+            }
+            frequency = Math.log10((double) numberOfDocumentsInCorpus / frequencies.size());
+            Text wordDocument = new Text();
+            Text TF = new Text();
+            Set<String> keys = new TreeSet<String>(frequencies.keySet());
+            for (String filename : keys) {
+                TF.set(DF.format(frequencies.get(filename) * frequency));
+                wordDocument.set(key.toString() + separator + filename);
+                context.write(wordDocument, TF);
+                frequencies.remove(filename);
+            }
+
+        }
     }
 
     public static class WordFrequencyMapper extends Mapper<Object, Text, Text, DoubleWritable> {
@@ -78,6 +111,10 @@ public class Main {
             Matcher m = p.matcher(value.toString());
             while (m.find()) {
                 String word = m.group().toLowerCase();
+                if (!Character.isLetter(word.charAt(0)) ||
+                        Character.isDigit(word.charAt(0)) ||
+                        word.contains("_"))
+                    continue;
                 if (words.containsKey(word)) words.put(word, words.get(word) + 1);
                 else words.put(word, 1);
                 ++length;
@@ -89,34 +126,12 @@ public class Main {
             String fileName = ((FileSplit) context.getInputSplit()).getPath().getName();
             for (String word : words.keySet()) {
                 count.set((double) words.get(word) / length);
-                keyOut.set(fileName + separator + word);
+                keyOut.set(word + separator + fileName);
                 context.write(keyOut, count);
             }
             super.cleanup(context);
         }
     }
 
-    public static class IdfReducer extends Reducer<Text, Text, Text, Text> {
-
-        double frequency;
-        private Map<String, Double> frequencies = new HashMap<String, Double>();
-
-        public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
-            String[] tmp = null;
-            for (Text docFreq : values) {
-                //tmp[0] file tmp[1] frequency
-                tmp = docFreq.toString().split(separator);
-                frequencies.put(tmp[0], Double.parseDouble(tmp[1]));
-            }
-            frequency = Math.log10((double) numberOfDocumentsInCorpus / frequencies.size());
-            Text wordDocument = new Text();
-            Text TF = new Text();
-            for (String word : frequencies.keySet()) {
-                TF.set(DF.format(frequencies.get(word) * frequency));
-                wordDocument.set(word + separator + tmp[0]);
-                context.write(wordDocument, TF);
-            }
-        }
-    }
 
 }
